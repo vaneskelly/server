@@ -1270,6 +1270,12 @@ int ha_prepare(THD *thd)
 
       }
     }
+
+    if (unlikely(tc_log->log_prepare(thd, all)))
+    {
+      ha_rollback_trans(thd, all);
+      error=1;
+    }
   }
 
   DBUG_RETURN(error);

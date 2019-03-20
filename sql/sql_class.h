@@ -1284,6 +1284,18 @@ typedef struct st_xid_state {
   /* Error reported by the Resource Manager (RM) to the Transaction Manager. */
   uint rm_error;
   XID_cache_element *xid_cache_element;
+  /*
+    Binary logging status.
+    It is set to TRUE at XA PREPARE if the transaction was written
+    to the binlog.
+    Naturally FALSE means the transaction was not written to
+    the binlog. Happens if the trnasaction did not modify anything
+    or binlogging was turned off. In that case we shouldn't binlog
+    the consequent XA COMMIT/ROLLBACK.
+    The recovered transaction after server restart sets it to TRUE always.
+    That can cause inconsistencies (shoud be fixed?).
+  */
+  bool is_binlogged;
 
   /**
     Check that XA transaction has an uncommitted work. Report an error
@@ -1306,6 +1318,12 @@ typedef struct st_xid_state {
       return true;
     }
     return false;
+  }
+
+  void reset()
+  {
+    xid.null();
+    is_binlogged= FALSE;
   }
 } XID_STATE;
 
@@ -1956,6 +1974,17 @@ struct Ha_data
     Lifetime: one user connection.
   */
   void *ha_ptr;
+   /**
+    A memorizer to engine specific "native" transaction object to provide
+    storage engine detach-re-attach facility.
+    The server level transaction object can dissociate from storage engine
+    transactions. The released "native" transaction reference
+    can be hold in the member until it is reconciled later.
+    Lifetime: Depends on caller of @c hton::replace_native_transaction_in_thd.
+    For instance in the case of slave server applier handling XA transaction
+    it is from XA START to XA PREPARE.
+  */
+  void *ha_ptr_backup;
   /**
     0: Life time: one statement within a transaction. If @@autocommit is
     on, also represents the entire transaction.
@@ -1972,7 +2001,7 @@ struct Ha_data
     non-NULL: engine is bound to this thread, engine shutdown forbidden
   */
   plugin_ref lock;
-  Ha_data() :ha_ptr(NULL) {}
+  Ha_data() :ha_ptr(NULL), ha_ptr_backup(NULL) {}
 };
 
 /**
@@ -6566,6 +6595,18 @@ inline bool add_gorder_to_list(THD *thd, Item *item, bool asc)
 inline bool add_group_to_list(THD *thd, Item *item, bool asc)
 {
   return thd->lex->current_select->add_group_to_list(thd, item, asc);
+}
+
+/**
+  @param THD         thread context
+  @param hton        pointer to handlerton
+  @return address of the placeholder of handlerton's specific transaction
+          object (data)
+*/
+
+inline void **thd_ha_data_backup(const THD *thd, const struct handlerton *hton)
+{
+  return (void **) &thd->ha_data[hton->slot].ha_ptr_backup;
 }
 
 inline Item *and_conds(THD *thd, Item *a, Item *b)

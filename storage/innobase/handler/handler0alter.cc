@@ -4428,7 +4428,9 @@ innobase_add_instant_try(
 	} else if (page_rec_is_supremum(rec)) {
 empty_table:
 		/* The table is empty. */
-		ut_ad(page_is_root(block->frame));
+		ut_ad(fil_page_index_page_check(block->frame));
+		ut_ad(!page_has_siblings(block->frame));
+		ut_ad(block->page.id.page_no() == index->page);
 		btr_page_empty(block, NULL, index, 0, &mtr);
 		index->remove_instant();
 		err = DB_SUCCESS;

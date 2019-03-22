@@ -173,6 +173,7 @@ page_header_set_field(
 {
 	ut_ad(page);
 	ut_ad(field <= PAGE_N_RECS);
+	ut_ad(field != PAGE_N_RECS || val);
 	ut_ad(field == PAGE_N_HEAP || val < srv_page_size);
 	ut_ad(field != PAGE_N_HEAP || (val & 0x7fff) < srv_page_size);
 
